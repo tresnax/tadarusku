@@ -39,15 +39,22 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_check_tadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.message.from_user.id
-    stats = connect.get_stats(user)
+    if update.message:
+        user = update.message.from_user.id
+    elif update.callback_query:
+        user = update.callback_query.from_user.id
+
+    stats = connect.get_tadarus(user)
     if stats['rn_date'] == str(datetime.date.today()):
-        message = "Kamu sudah check-in tadarus hari ini. Terima kasih!"
+        message = "Kamu sudah tadarus hari ini kok! 🌟"
     else:
-        connect.update_stats(user)
-        message = "Check-in tadarus berhasil. Semangat tadarus!"
+        connect.update_tadarus(user, str(datetime.date.today()))
+        message = "Alhamdulillah kamu sudah tadarus hari ini ! 🌟"
     
-    await update.message.reply_text(text=message, parse_mode='Markdown')
+    if update.message:
+        await update.message.reply_text(message, parse_mode='Markdown')
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text=message, parse_mode='Markdown')
 
 
 async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -60,12 +67,12 @@ async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     message = f"Berikut runtutan harian tadarus kamu ☺️ :\n\n" \
               f"📖 Tadarus Harian: {stats['runtutan']} Hari\n" \
-              f"📅 Tanggak Mulai: {stats['start_date']}\n\n" \
+              f"📅 Tanggal Mulai: {stats['start_date']}\n\n" \
               f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼"
     
-    keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin'),
-                 InlineKeyboardButton("Stop Pengingat 🛑", callback_data='stop')],[
-                 InlineKeyboardButton("Riwatat Tadarus 📖", callback_data='stats')]]
+    keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin_'),
+                 InlineKeyboardButton("Stop Pengingat 🛑", callback_data='stop_')],[
+                 InlineKeyboardButton("Riwatat Tadarus 📖", callback_data='stats_')]]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -75,12 +82,29 @@ async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 
+async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    history = connect.get_stats(update.callback_query.from_user.id)
+    
+    message = f"Berikut Riwayat tadarus kamu Sebelumnya ☺️ :\n\n" \
+                f"📖 Total Tadarus: {history['runtutan']} Hari\n" \
+                f"📅 Tanggal Mulai: {history['start_date']}\n" \
+                f"📅 Tanggal Terakhir: {history['last_date']}\n\n" \
+                f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼"
+
+    keyboard = [[InlineKeyboardButton("Reset History 🔄", callback_data='reset_'),
+                 InlineKeyboardButton("Kembali", callback_data='back_')]]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+
+
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = f"apakah kamu yakin ingin menghentikan pengingat tadarus?\n\n" \
                "Kamu bisa memulai lagi dengan menggunakan perintah /start"
     
-    keyboard = [[InlineKeyboardButton("Ya", callback_data='yes'),
-                 InlineKeyboardButton("Tidak", callback_data='no')]]
+    keyboard = [[InlineKeyboardButton("Ya", callback_data='yes_stop'),
+                 InlineKeyboardButton("Tidak", callback_data='no_stop')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.message:
@@ -94,57 +118,52 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     user = query.from_user.id
 
-    if query.data == 'yes':
-        connect.del_notif(user)
-        message = "Pengingat tadarus kamu sudah dihentikan. Kamu bisa memulai lagi dengan menggunakan perintah /start"
-        await query.edit_message_text(message, parse_mode='Markdown')
-    
-    
-    elif query.data == 'no':
-        message = "Pengingat tadarus kamu masih berjalan. Kamu bisa menghentikannya dengan menggunakan perintah /stop"
-        await query.edit_message_text(message, parse_mode='Markdown')
+    if '_' in query.data:
+        action, label = query.data.split('_')
+    else:
+        action = query.data
+        return
 
+    if action == 'yes':
+        if label == 'stop':
+            connect.del_notif(user)
+            message = "Pengingat tadarus kamu sudah dihentikan. Kamu bisa memulai lagi dengan menggunakan perintah /start"
+            await query.edit_message_text(message, parse_mode='Markdown')
+        elif label == 'reset':
+            connect.reset_stats(user)
+            message = "Riwayat tadarus kamu sudah direset."
+            await query.edit_message_text(message, parse_mode='Markdown')
 
-    elif query.data == 'checkin':
-        stats = connect.get_tadarus(user)
-        if stats['rn_date'] == str(datetime.date.today()):
-            message = "Kamu sudah check-in tadarus hari ini. Terima kasih!"
-        else:
-            connect.update_tadarus(user, str(datetime.date.today()))
-            message = "Check-in tadarus berhasil. Semangat tadarus!"
-        
-        await query.edit_message_text(text=message, parse_mode='Markdown')
+    elif action == 'no':
+        if label == 'stop':
+            await query.answer()
+            await cmd_mytadarus(update, context)
+        elif label == 'reset':
+            await query.answer()
+            await cmd_history(update, context)
 
+    elif action == 'checkin':
+        await query.answer()    
+        await cmd_check_tadarus(update, context)
 
-    elif query.data == 'stop':
+    elif action == 'stop':
         await query.answer()
         await cmd_stop(update, context)
 
+    elif action == 'stats':
+        await query.answer()
+        await cmd_history(update, context)
 
-    elif query.data == 'stats':
-        history = connect.get_stats(user)
+    elif action == 'reset':
+        message = "Apakah kamu yakin ingin mereset riwayat tadarus kamu?\n\n" \
+
+        keyboard = [[InlineKeyboardButton("Ya", callback_data='yes_reset'),
+                     InlineKeyboardButton("Tidak", callback_data='no_reset')]]
+        keyboard_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=keyboard_markup, parse_mode='Markdown')
     
-        message = f"Berikut Riwayat tadarus kamu Sebelumnya ☺️ :\n\n" \
-                f"📖 Total Tadarus: {history['runtutan']} Hari\n" \
-                f"📅 Tanggal Mulai: {history['start_date']}\n" \
-                f"📅 Tanggal Terakhir: {history['last_date']}\n\n" \
-                f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼"
-
-        keyboard = [[InlineKeyboardButton("Reset Tadarus 🔄", callback_data='reset'),
-                 InlineKeyboardButton("Kembali", callback_data='back')]]
-
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
-
-
-    elif query.data == 'reset':
-        connect.reset_stats(user)
-        message = "Riwayat tadarus kamu sudah direset. Semangat tadarus!"
-        await query.message.reply_text(message, parse_mode='Markdown')
-    
-
-    elif query.data == 'back':
+    elif action == 'back':
         await query.answer()
         await cmd_mytadarus(update, context)
 
@@ -174,9 +193,10 @@ def schedule_reminders(application: Application) -> None:
     timezone = pytz.timezone('Asia/Jakarta')
     logging.info(f"Scheduling reminders")
     times = [
-        datetime.time(hour=15, minute=27, tzinfo=timezone),
+        datetime.time(hour=5, minute=00, tzinfo=timezone),
+        datetime.time(hour=12, minute=00, tzinfo=timezone),
         datetime.time(hour=15, minute=30, tzinfo=timezone),
-        # datetime.time(hour=14, minute=40, tzinfo=datetime.timezone.utc)
+        datetime.time(hour=19, minute=00, tzinfo=timezone)
     ]
 
     for t in times:
@@ -191,9 +211,7 @@ def main() -> None:
 
 
     application.add_handler(CommandHandler('start', cmd_start))
-    application.add_handler(CommandHandler('stop', cmd_stop))
     application.add_handler(CommandHandler('mytadarus', cmd_mytadarus))
-    application.add_handler(CommandHandler('checkin', cmd_check_tadarus))
     application.add_handler(CallbackQueryHandler(callback_handler))
 
     schedule_reminders(application)

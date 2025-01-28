@@ -21,19 +21,19 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     check_user = connect.get_tadarus(update.message.from_user.id)
 
     message = f"Assalamu'alaikum, {update.message.from_user.first_name}!\n\n" \
-               "Selamat datang di Tadarusku Bot. Bot ini akan membantu kamu untuk mengingatkan jadwal tadarus kamu.\n\n" \
-               "Pengingat akan diberikan setiap hari selama tiga kali, yaitu pagi, siang, dan malam.\n\n" \
-               "Pengingat akan berhenti apabila kamu sudah checkin pada hari tersebut.\n\n" \
+               "Selamat datang di 📖 Tadarusku Bot. Bot ini akan membantu kamu untuk mengingatkan jadwal tadarus kamu.\n\n" \
+               "Pengingat akan diberikan setiap hari dan pengingat akan berhenti apabila kamu sudah checkin pada hari tersebut.\n\n" \
                "Pastikan kamu selalu checkin setelah tadarus ya. Semoga kita semua diberikan kemudahan dalam menjalankan ibadah tadarus.\n\n" \
                "Kamu bisa menggunakan perintah berikut:\n" \
                "/mytadarus - Melihat statistik tadarus kamu\n" \
+               "/tips - Untuk mendapatkan tips tadarus\n" \
 
     if check_user:
         logging.info(f"User {update.message.from_user.id} already registered")
     else:
         logging.info(f"User {update.message.from_user.id} registered")
-        connect.add_user(update.message.from_user.id, str(datetime.date.today()), True)
-        connect.new_tadarus(update.message.from_user.id, 0, str(datetime.date.today()))
+        connect.add_user(update.message.from_user.id, datetime.date.today().strftime('%d-%m-%Y'), 1)
+        connect.new_tadarus(update.message.from_user.id, 0, datetime.date.today().strftime('%d-%m-%Y'))
         
     await update.message.reply_text(message, parse_mode='Markdown') 
 
@@ -49,7 +49,8 @@ async def cmd_check_tadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         message = "Kamu sudah tadarus hari ini kok! 🌟"
     else:
         connect.update_tadarus(user, str(datetime.date.today()))
-        message = "Alhamdulillah kamu sudah tadarus hari ini ! 🌟"
+        message = f"Alhamdulillah kamu sudah tadarus hari ini ! 🌟\n" \
+                  f"Kamu sudah tadarus {stats['runtutan']} Hari 🔥\n" \
     
     if update.message:
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -59,20 +60,32 @@ async def cmd_check_tadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
-        user = update.message.from_user.id
+        userid = update.message.from_user.id
     elif update.callback_query:
-        user = update.callback_query.from_user.id
+        userid = update.callback_query.from_user.id
 
-    stats = connect.get_tadarus(user)
+    stats = connect.get_tadarus(userid)
+    users = connect.get_user_notif()
+    status = True
 
-    message = f"Berikut runtutan harian tadarus kamu ☺️ :\n\n" \
+    for user in users:
+        logging.info(f"User {userid} notif status: {user}")
+        if user == userid:
+            status = True
+            break
+        else:
+            status = False
+
+
+    message = f"Berikut runtutan harian tadarus kamu ☺️ \n\n" \
               f"📖 Tadarus Harian: {stats['runtutan']} Hari\n" \
               f"📅 Tanggal Mulai: {stats['start_date']}\n\n" \
-              f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼"
+              f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼\n" \
+              f"Status Pengingat : {'Aktif' if status else 'Tidak Aktif'}\n\n"
     
     keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin_'),
-                 InlineKeyboardButton("Stop Pengingat 🛑", callback_data='stop_')],[
-                 InlineKeyboardButton("Riwatat Tadarus 📖", callback_data='stats_')]]
+                InlineKeyboardButton("Stop Pengingat 🛑", callback_data='stop_')],
+               [InlineKeyboardButton("Riwayat Tadarus 📖", callback_data='stats_')]]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -155,7 +168,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await cmd_history(update, context)
 
     elif action == 'reset':
-        message = "Apakah kamu yakin ingin mereset riwayat tadarus kamu?\n\n" \
+        message = "Apakah kamu yakin ingin mereset riwayat tadarus kamu?\n" \
+                  "Data riwayat dan tadarus sekarang akan dihapus dan tidak bisa dikembalikan lagi."
 
         keyboard = [[InlineKeyboardButton("Ya", callback_data='yes_reset'),
                      InlineKeyboardButton("Tidak", callback_data='no_reset')]]

@@ -28,8 +28,7 @@ def get_user_notif() -> list:
     users = cursor.fetchall()
 
     conn.close()
-
-    return [user[0] for user in users]
+    return users
 
 
 def del_notif(userid: str) -> None:

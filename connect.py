@@ -40,6 +40,16 @@ def del_notif(userid: str) -> None:
     conn.commit()
     conn.close()
 
+
+def add_notif(userid: str) -> None:
+    conn = db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute('UPDATE users SET notif = 1 WHERE userid = ?', (userid, ))
+
+    conn.commit()
+    conn.close()
+
 #==================================================================================================
 
 def get_tadarus(userid: str) -> dict:

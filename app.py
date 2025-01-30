@@ -6,6 +6,7 @@ import logging
 import os
 import datetime
 import pytz
+import asyncio
 
 load_dotenv()
 
@@ -46,11 +47,11 @@ async def cmd_check_tadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     stats = connect.get_tadarus(user)
     if stats['rn_date'] == str(datetime.date.today()):
-        message = "Kamu sudah tadarus hari ini kok! 🌟"
+        message = f"Kamu sudah tadarus hari ini kok! 🌟\n" \
     else:
         connect.update_tadarus(user, str(datetime.date.today()))
         message = f"Alhamdulillah kamu sudah tadarus hari ini ! 🌟\n" \
-                  f"Kamu sudah tadarus {stats['runtutan']} Hari 🔥\n" \
+                  f"Kamu sudah tadarus {stats['runtutan']+1} Hari 🔥\n" 
     
     if update.message:
         await update.message.reply_text(message, parse_mode='Markdown')
@@ -66,16 +67,13 @@ async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     stats = connect.get_tadarus(userid)
     users = connect.get_user_notif()
-    status = True
+    status = False
 
     for user in users:
         logging.info(f"User {userid} notif status: {user}")
-        if user == userid:
+        if user[0] == str(userid):
             status = True
             break
-        else:
-            status = False
-
 
     message = f"Berikut runtutan harian tadarus kamu ☺️ \n\n" \
               f"📖 Tadarus Harian: {stats['runtutan']} Hari\n" \
@@ -83,8 +81,15 @@ async def cmd_mytadarus(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
               f"Jangan lupa tadarus hari ini ya! Semangat tadarus! 💪🏼\n" \
               f"Status Pengingat : {'Aktif' if status else 'Tidak Aktif'}\n\n"
     
+    if status:
+        button_label = "Stop Pengingat 🔕"
+        alert_data = 'stop_'
+    else:
+        button_label = "Aktifkan Pengingat 🔔"
+        alert_data = 'alert_'
+
     keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin_'),
-                InlineKeyboardButton("Stop Pengingat 🛑", callback_data='stop_')],
+                InlineKeyboardButton(button_label, callback_data=alert_data)],
                [InlineKeyboardButton("Riwayat Tadarus 📖", callback_data='stats_')]]
     
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -113,8 +118,7 @@ async def cmd_history(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 
 async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    message = f"apakah kamu yakin ingin menghentikan pengingat tadarus?\n\n" \
-               "Kamu bisa memulai lagi dengan menggunakan perintah /start"
+    message = f"apakah kamu yakin ingin menghentikan pengingat tadarus?\n"
     
     keyboard = [[InlineKeyboardButton("Ya", callback_data='yes_stop'),
                  InlineKeyboardButton("Tidak", callback_data='no_stop')]]
@@ -125,6 +129,18 @@ async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     elif update.callback_query:
         await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
+
+async def cmd_alert(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    message = f"apakah kamu yakin ingin mengaktifkan kembali pengingat tadarus?\n"
+    
+    keyboard = [[InlineKeyboardButton("Ya", callback_data='yes_alert'),
+                 InlineKeyboardButton("Tidak", callback_data='no_alert')]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.message:
+        await update.message.reply_text(message, reply_markup=reply_markup, parse_mode='Markdown')
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(message, reply_markup=reply_markup, parse_mode='Markdown')
 
 # Callback Handler ======================================================================================
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -140,12 +156,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if action == 'yes':
         if label == 'stop':
             connect.del_notif(user)
-            message = "Pengingat tadarus kamu sudah dihentikan. Kamu bisa memulai lagi dengan menggunakan perintah /start"
-            await query.edit_message_text(message, parse_mode='Markdown')
+            await query.answer()
+            await cmd_mytadarus(update, context)
         elif label == 'reset':
             connect.reset_stats(user)
             message = "Riwayat tadarus kamu sudah direset."
             await query.edit_message_text(message, parse_mode='Markdown')
+        elif label == 'alert':
+            connect.add_notif(user)
+            await query.answer()
+            await cmd_mytadarus(update, context)
+
 
     elif action == 'no':
         if label == 'stop':
@@ -154,6 +175,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         elif label == 'reset':
             await query.answer()
             await cmd_history(update, context)
+        elif label == 'alert':
+            await query.answer()
+            await cmd_mytadarus(update, context)
 
     elif action == 'checkin':
         await query.answer()    
@@ -162,6 +186,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     elif action == 'stop':
         await query.answer()
         await cmd_stop(update, context)
+    
+    elif action == 'alert':
+        await query.answer()
+        await cmd_alert(update, context)
 
     elif action == 'stats':
         await query.answer()
@@ -187,18 +215,28 @@ async def send_reminder(context: ContextTypes.DEFAULT_TYPE) -> None:
     users = connect.get_user_notif()
     message = "Apakah kamu sudah tadarus hari ini ? 📖\n\n" \
   
-    keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin')]]
+    keyboard = [[InlineKeyboardButton("Sudah Tadarus ✅", callback_data='checkin_')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     
     logging.info(f"Sending reminder")
     try:
         for user in users:
-            if connect.get_tadarus(user)['rn_date'] != str(datetime.date.today()):
-                await context.bot.send_message(chat_id=user, text=message, reply_markup=reply_markup, parse_mode='Markdown')
-                logging.info(f"Reminder sent to user_id: {user}")
+            user_id = user[0]
+            if connect.get_tadarus(user_id)['rn_date'] != str(datetime.date.today()):
+                try:
+                    await context.bot.send_message(chat_id=user_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+                    logging.info(f"Reminder sent to user_id: {user_id}")
+                except Exception as e:
+                    logging.error(f"Failed to send reminder to user_id: {user_id}, error: {e}")
+
+                    try:
+                        await context.bot.send_message(chat_id=user_id, text=message, reply_markup=reply_markup, parse_mode='Markdown')
+                        logging.info(f"Reminder sent to user_id: {user_id}")
+                    except Exception as retry_e:
+                        logging.error(f"Failed to send reminder to user_id: {user_id}, error: {retry_e}")
     except Exception as e:
-        logging.error(f"Failed to send reminder to user_id: {user}, error: {e}")
+        logging.error(f"Failed to send reminder due to an error: {e}")
 
 
 def schedule_reminders(application: Application) -> None:
